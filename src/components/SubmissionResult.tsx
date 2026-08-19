@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { IconAlertTriangle, IconCheckCircle, IconClockPending, IconXCircle } from './icons'
 import type { ParsedPasResponse } from '../lib/parsePasResponse'
 
 interface Props {
@@ -14,6 +15,13 @@ const OUTCOME_LABEL: Record<ParsedPasResponse['outcome'], string> = {
   error: 'Error',
 }
 
+const OUTCOME_ICON: Record<ParsedPasResponse['outcome'], typeof IconCheckCircle> = {
+  approved: IconCheckCircle,
+  denied: IconXCircle,
+  pended: IconClockPending,
+  error: IconAlertTriangle,
+}
+
 export function SubmissionResult({ result, error, onStartOver }: Props) {
   const [showRaw, setShowRaw] = useState(false)
 
@@ -21,6 +29,10 @@ export function SubmissionResult({ result, error, onStartOver }: Props) {
     return (
       <div>
         <h2>Submission failed</h2>
+        <div className="outcome-badge error">
+          <IconAlertTriangle />
+          Error
+        </div>
         <div className="notice notice-danger">{error}</div>
         <div className="button-row">
           <button className="button-primary" onClick={onStartOver}>
@@ -34,11 +46,15 @@ export function SubmissionResult({ result, error, onStartOver }: Props) {
   if (!result) return null
 
   const raw = result.claimResponse ?? result.operationOutcome
+  const Icon = OUTCOME_ICON[result.outcome]
 
   return (
     <div>
       <h2>Result</h2>
-      <div className={`outcome-badge ${result.outcome}`}>{OUTCOME_LABEL[result.outcome]}</div>
+      <div className={`outcome-badge ${result.outcome}`}>
+        <Icon />
+        {OUTCOME_LABEL[result.outcome]}
+      </div>
       {result.reasonText && <p className="result-reason">{result.reasonText}</p>}
 
       {raw && (

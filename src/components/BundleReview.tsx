@@ -87,6 +87,7 @@ export function BundleReview({ data, onBack, onSubmit, submitting }: Props) {
           Back
         </button>
         <button className="button-primary" onClick={() => bundle && onSubmit(bundle)} disabled={!canSubmit}>
+          {submitting && <span className="spinner" />}
           {submitting ? 'Submitting...' : 'Submit prior authorization request'}
         </button>
       </div>

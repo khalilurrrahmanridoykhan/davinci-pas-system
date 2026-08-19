@@ -24,30 +24,32 @@ export function Wizard() {
     <>
       <StepProgress current={wizard.step} />
       <div className="card">
-        {wizard.step === 'patient-coverage' && (
-          <PatientCoverageForm
-            patient={wizard.data.patient}
-            coverage={wizard.data.coverage}
-            updatePatient={wizard.updatePatient}
-            updateCoverage={wizard.updateCoverage}
-            onNext={wizard.goNext}
-          />
-        )}
-        {wizard.step === 'provider' && (
-          <ProviderForm provider={wizard.data.provider} updateProvider={wizard.updateProvider} onNext={wizard.goNext} onBack={wizard.goBack} />
-        )}
-        {wizard.step === 'requested-item' && (
-          <RequestedItemForm
-            requestedItem={wizard.data.requestedItem}
-            updateRequestedItem={wizard.updateRequestedItem}
-            onNext={wizard.goNext}
-            onBack={wizard.goBack}
-          />
-        )}
-        {wizard.step === 'review' && (
-          <BundleReview data={wizard.data} onBack={wizard.goBack} onSubmit={handleSubmit} submitting={submitting} />
-        )}
-        {wizard.step === 'result' && <SubmissionResult result={result} error={error} onStartOver={handleStartOver} />}
+        <div className="step-panel" key={wizard.step}>
+          {wizard.step === 'patient-coverage' && (
+            <PatientCoverageForm
+              patient={wizard.data.patient}
+              coverage={wizard.data.coverage}
+              updatePatient={wizard.updatePatient}
+              updateCoverage={wizard.updateCoverage}
+              onNext={wizard.goNext}
+            />
+          )}
+          {wizard.step === 'provider' && (
+            <ProviderForm provider={wizard.data.provider} updateProvider={wizard.updateProvider} onNext={wizard.goNext} onBack={wizard.goBack} />
+          )}
+          {wizard.step === 'requested-item' && (
+            <RequestedItemForm
+              requestedItem={wizard.data.requestedItem}
+              updateRequestedItem={wizard.updateRequestedItem}
+              onNext={wizard.goNext}
+              onBack={wizard.goBack}
+            />
+          )}
+          {wizard.step === 'review' && (
+            <BundleReview data={wizard.data} onBack={wizard.goBack} onSubmit={handleSubmit} submitting={submitting} />
+          )}
+          {wizard.step === 'result' && <SubmissionResult result={result} error={error} onStartOver={handleStartOver} />}
+        </div>
       </div>
     </>
   )
