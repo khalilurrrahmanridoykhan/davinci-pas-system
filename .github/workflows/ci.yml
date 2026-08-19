@@ -19,3 +19,29 @@ jobs:
       - run: npx tsc -b
       - run: npm test
       - run: npm run build
+
+  deploy:
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci --legacy-peer-deps
+      - run: npm run build
+      - name: Deploy dist/ to the VPS
+        env:
+          SSH_KEY: ${{ secrets.VPS_DEPLOY_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H 31.97.144.127 >> ~/.ssh/known_hosts
+          rsync -avz --delete -e "ssh -i ~/.ssh/deploy_key" dist/ shasthopath@31.97.144.127:/var/www/pas-system/dist/
+          # The static files live on the shared Caddy/proxy container's writable
+          # layer (docker cp), not a real bind mount -- see README for why. This
+          # step re-syncs them into the running container on every deploy.
+          ssh -i ~/.ssh/deploy_key shasthopath@31.97.144.127 "sudo -n docker cp /var/www/pas-system/dist/. onehealth-platform-proxy-1:/srv/pas-system/"

@@ -40,6 +40,14 @@ Both confirmed by directly reading the reference server's own source and test fi
 - Self-hosted reference server, not a public hosted demo -- the two candidate public sandboxes (`sandbox.logicahealth.org` and its PAS subdomain) were confirmed retired (November 2024) before this was built.
 - Auth is bypassed on the reference server rather than a full JWT-bearer client implemented -- correct for a single-tenant demo, not representative of a production payer integration.
 
+## Deploying: a real gotcha found by actually doing it
+
+`pas.krrkhan.com` is served by a Caddy instance shared with `dhis2.krrkhan.com` and other apps on the same VPS, running as its own Docker Compose stack (`onehealth-platform`). That compose file only bind-mounts a fixed list of host paths into the proxy container -- adding a new one requires recreating the container, which would briefly interrupt every site it fronts, not just this one.
+
+To avoid that, this app's static files are placed with `docker cp` directly into the running container's writable layer instead of a real bind mount. That's a real, documented tradeoff: those files don't survive the container being recreated for an unrelated reason (e.g. someone updates `onehealth-platform` itself) -- on that event, redeploy this app once via `git push` (or manually via the same `docker cp` step in `.github/workflows/ci.yml`) to restore them. The proper long-term fix is adding a real bind mount to `onehealth-platform`'s `compose.production.yml`, deferred until that stack needs a restart for its own reasons anyway.
+
+GitHub Actions (`.github/workflows/ci.yml`) deploys automatically on every push to `main`: builds, `rsync`s `dist/` to `/var/www/pas-system/dist/` on the VPS (the source of truth on disk), then `docker cp`s it into the live container. Auth is a dedicated SSH keypair (not the maintainer's personal key) added only to the `shasthopath` user's `authorized_keys` -- the most restricted account available on this VPS for this purpose (root access to create a fully separate, app-scoped user wasn't available).
+
 ## Running locally
 
 ```
@@ -63,8 +71,8 @@ Points at `https://pas.krrkhan.com/fhir` by default (the live, self-hosted refer
 - Requested-item types beyond the one DME/`DeviceRequest` example.
 - A production-grade OAuth2 client (currently relies on the reference server's `BYPASS_AUTH` flag).
 - Payer-side implementation -- out of scope by design.
-- CI/CD auto-deploy to the VPS (planned, not yet wired up).
 - Browser click-through of the wizard (verified via script instead, see above).
+- A real bind-mounted deploy target instead of `docker cp` into the shared proxy container's writable layer (see "Deploying" above).
 
 ## License
 
