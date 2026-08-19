@@ -10,40 +10,46 @@ A provider/requester-side client for the [Da Vinci Prior Authorization Support (
 
 Built deliberately outside DHIS2/public-health work to demonstrate FHIR interoperability in a different domain: US payer/provider prior authorization, one of the most in-demand FHIR skill areas in US health IT right now, driven by real CMS interoperability mandates. Scoped to weeks, not months -- a working client against one concrete workflow, not a general-purpose PAS platform.
 
-## System architecture
+## How this system interacts with FHIR
 
-Everything runs on one VPS, sharing infrastructure with other apps rather than standing up dedicated infra per project:
+The whole point of this app is the resource graph below -- one `Claim` at the center, referencing everything else it needs, submitted as a single Bundle, answered with a single `ClaimResponse` that references the `Claim` right back:
 
 ```mermaid
-flowchart LR
-    subgraph browser["Browser"]
-        UI["React wizard<br/>components/ + hooks/"]
-        LIB["src/lib/<br/>buildPasBundle · validatePasBundle<br/>pasClient · parsePasResponse"]
-        UI --> LIB
-    end
+graph TD
+    Claim["Claim (PASClaimRequest)<br/>use: preauthorization"]
+    Patient["Patient"]
+    Coverage["Coverage"]
+    ProviderOrg["Organization<br/>(requesting provider)"]
+    PayorOrg["Organization<br/>(payor)"]
+    Practitioner["Practitioner"]
+    PractitionerRole["PractitionerRole"]
+    DeviceRequest["DeviceRequest<br/>HCPCS L1833"]
+    Condition["Condition<br/>ICD-10"]
+    ClaimResponse["ClaimResponse (PASClaimResponse)"]
 
-    subgraph vps["VPS -- 31.97.144.127"]
-        subgraph proxy["Shared Caddy proxy (onehealth-platform-proxy-1)"]
-            R1["pas.krrkhan.com/*<br/>→ static dist/ (docker cp)"]
-            R2["pas.krrkhan.com/fhir/*<br/>→ reverse_proxy"]
-            R3["dhis2.krrkhan.com<br/>→ DHIS2 (unrelated app,<br/>same proxy container)"]
-        end
-        REF["davinci-pas-reference-server<br/>Docker · HL7-DaVinci/prior-auth<br/>BYPASS_AUTH=true"]
-        R2 --> REF
-    end
+    Claim -->|patient| Patient
+    Claim -->|insurance.coverage| Coverage
+    Claim -->|provider| ProviderOrg
+    Claim -->|prescription| DeviceRequest
+    Claim -->|diagnosis| Condition
+    Coverage -->|beneficiary, subscriber| Patient
+    Coverage -->|payor| PayorOrg
+    DeviceRequest -->|subject| Patient
+    DeviceRequest -->|requester| PractitionerRole
+    DeviceRequest -->|reasonReference| Condition
+    PractitionerRole -->|practitioner| Practitioner
+    PractitionerRole -->|organization| ProviderOrg
+    Condition -->|subject| Patient
 
-    GH["GitHub repo<br/>davinci-pas-system"]
-    CI["GitHub Actions<br/>.github/workflows/ci.yml"]
-
-    LIB -- "POST /fhir/Claim/$submit" --> R2
-    GH -- "push to main" --> CI
-    CI -- "build → rsync → docker cp" --> R1
+    Claim ==POST Claim/$submit==> ClaimResponse
+    ClaimResponse -->|request| Claim
 ```
 
-- **The client** (this repo) is a static Vite/React build -- no server-side code of its own. All FHIR logic lives in `src/lib/` as pure, unit-tested functions; `src/hooks/` bridges them into React state; `src/components/` is presentation only.
-- **The payer side** is a separate Docker container running the official reference implementation, reachable only inside the VPS's Docker network (never exposed on its own public port) -- Caddy is the only thing that talks to it directly.
-- **`dhis2.krrkhan.com` shares the same Caddy container** as this app (a pre-existing multi-tenant setup, not something built for this project) -- see [Deploying](#deploying-a-real-gotcha-found-by-actually-doing-it) for what that constrains.
-- **CI/CD** is push-to-deploy: every push to `main` on GitHub runs the test suite, then builds and ships straight to production. There's no staging environment.
+- **One operation, one round trip.** Everything above travels in a single `POST {server}/Claim/$submit` -- no multi-step negotiation, no polling (the reference server answers synchronously).
+- **The `Claim` is the hub.** `patient`, `insurance.coverage`, and `provider` point out to who's involved; `prescription` and `diagnosis` point to *what's* being requested and *why* -- confirmed against the reference server's own test fixture, not the more commonly-seen `supportingInfo`-based linkage (see the two real bugs below).
+- **References are `{ResourceType}/{id}`**, resolved against `fullUrl`s inside the same Bundle -- not `urn:uuid:...`, which this specific server rejects outright.
+- **The response is symmetric**: `ClaimResponse.request` points straight back at the submitted `Claim`, which is how `src/lib/parsePasResponse.ts` confirms it's looking at the right answer before reading `disposition`/`outcome` off it.
+- All of this is built as pure, unit-tested functions in `src/lib/` (`buildPatient.ts`, `buildCoverage.ts`, `buildClaim.ts`, `buildPasBundle.ts`, `parsePasResponse.ts`, ...) -- `src/hooks/` and `src/components/` are just the wizard UI around them.
 
 ## Workflow: how a request actually moves through the system
 
@@ -92,6 +98,31 @@ Both confirmed by directly reading the reference server's own source and test fi
 - Auth is bypassed on the reference server rather than a full JWT-bearer client implemented -- correct for a single-tenant demo, not representative of a production payer integration.
 
 ## Deploying: a real gotcha found by actually doing it
+
+```mermaid
+flowchart LR
+    subgraph browser["Browser"]
+        UI["React wizard"]
+    end
+
+    subgraph vps["VPS -- 31.97.144.127"]
+        subgraph proxy["Shared Caddy proxy (onehealth-platform-proxy-1)"]
+            R1["pas.krrkhan.com/*<br/>→ static dist/ (docker cp)"]
+            R2["pas.krrkhan.com/fhir/*<br/>→ reverse_proxy"]
+            R3["dhis2.krrkhan.com<br/>→ DHIS2 (unrelated app,<br/>same proxy container)"]
+        end
+        REF["davinci-pas-reference-server<br/>Docker · HL7-DaVinci/prior-auth<br/>BYPASS_AUTH=true"]
+        R2 --> REF
+    end
+
+    GH["GitHub repo"]
+    CI["GitHub Actions"]
+
+    UI -- "Claim/$submit" --> R2
+    UI -- "loads app" --> R1
+    GH -- "push to main" --> CI
+    CI -- "build → rsync → docker cp" --> R1
+```
 
 `pas.krrkhan.com` is served by a Caddy instance shared with `dhis2.krrkhan.com` and other apps on the same VPS, running as its own Docker Compose stack (`onehealth-platform`). That compose file only bind-mounts a fixed list of host paths into the proxy container -- adding a new one requires recreating the container, which would briefly interrupt every site it fronts, not just this one.
 
