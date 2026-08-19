@@ -4,6 +4,7 @@ import { BundleReview } from './BundleReview'
 import { PatientCoverageForm } from './PatientCoverageForm'
 import { ProviderForm } from './ProviderForm'
 import { RequestedItemForm } from './RequestedItemForm'
+import { StepProgress } from './StepProgress'
 import { SubmissionResult } from './SubmissionResult'
 
 export function Wizard() {
@@ -19,31 +20,35 @@ export function Wizard() {
     wizard.reset()
   }
 
-  switch (wizard.step) {
-    case 'patient-coverage':
-      return (
-        <PatientCoverageForm
-          patient={wizard.data.patient}
-          coverage={wizard.data.coverage}
-          updatePatient={wizard.updatePatient}
-          updateCoverage={wizard.updateCoverage}
-          onNext={wizard.goNext}
-        />
-      )
-    case 'provider':
-      return <ProviderForm provider={wizard.data.provider} updateProvider={wizard.updateProvider} onNext={wizard.goNext} onBack={wizard.goBack} />
-    case 'requested-item':
-      return (
-        <RequestedItemForm
-          requestedItem={wizard.data.requestedItem}
-          updateRequestedItem={wizard.updateRequestedItem}
-          onNext={wizard.goNext}
-          onBack={wizard.goBack}
-        />
-      )
-    case 'review':
-      return <BundleReview data={wizard.data} onBack={wizard.goBack} onSubmit={handleSubmit} submitting={submitting} />
-    case 'result':
-      return <SubmissionResult result={result} error={error} onStartOver={handleStartOver} />
-  }
+  return (
+    <>
+      <StepProgress current={wizard.step} />
+      <div className="card">
+        {wizard.step === 'patient-coverage' && (
+          <PatientCoverageForm
+            patient={wizard.data.patient}
+            coverage={wizard.data.coverage}
+            updatePatient={wizard.updatePatient}
+            updateCoverage={wizard.updateCoverage}
+            onNext={wizard.goNext}
+          />
+        )}
+        {wizard.step === 'provider' && (
+          <ProviderForm provider={wizard.data.provider} updateProvider={wizard.updateProvider} onNext={wizard.goNext} onBack={wizard.goBack} />
+        )}
+        {wizard.step === 'requested-item' && (
+          <RequestedItemForm
+            requestedItem={wizard.data.requestedItem}
+            updateRequestedItem={wizard.updateRequestedItem}
+            onNext={wizard.goNext}
+            onBack={wizard.goBack}
+          />
+        )}
+        {wizard.step === 'review' && (
+          <BundleReview data={wizard.data} onBack={wizard.goBack} onSubmit={handleSubmit} submitting={submitting} />
+        )}
+        {wizard.step === 'result' && <SubmissionResult result={result} error={error} onStartOver={handleStartOver} />}
+      </div>
+    </>
+  )
 }

@@ -29,42 +29,43 @@ export function BundleReview({ data, onBack, onSubmit, submitting }: Props) {
     <div>
       <h2>Review</h2>
 
-      {buildError && <p style={{ color: '#b91c1c' }}>Could not build the request: {buildError}</p>}
+      {buildError && <div className="notice notice-danger">Could not build the request: {buildError}</div>}
 
       {bundle && (
         <>
-          <table style={{ fontSize: 14, marginBottom: 16 }}>
+          <table className="summary-table">
             <tbody>
               <tr>
-                <td style={{ paddingRight: 12, fontWeight: 600 }}>Patient</td>
+                <td>Patient</td>
                 <td>
                   {data.patient.givenName} {data.patient.familyName} (DOB {data.patient.birthDate})
                 </td>
               </tr>
               <tr>
-                <td style={{ paddingRight: 12, fontWeight: 600 }}>Coverage</td>
+                <td>Coverage</td>
                 <td>
-                  {data.coverage.payorName} -- subscriber {data.coverage.subscriberId}
+                  {data.coverage.payorName} &mdash; subscriber <span className="mono">{data.coverage.subscriberId}</span>
                 </td>
               </tr>
               <tr>
-                <td style={{ paddingRight: 12, fontWeight: 600 }}>Requesting provider</td>
+                <td>Requesting provider</td>
                 <td>
-                  {data.provider.givenName} {data.provider.familyName}, NPI {data.provider.npi} ({data.provider.organizationName})
+                  {data.provider.givenName} {data.provider.familyName}, NPI <span className="mono">{data.provider.npi}</span> (
+                  {data.provider.organizationName})
                 </td>
               </tr>
               <tr>
-                <td style={{ paddingRight: 12, fontWeight: 600 }}>Requested item</td>
+                <td>Requested item</td>
                 <td>
-                  {data.requestedItem.hcpcsCode} x{data.requestedItem.quantity} -- {data.requestedItem.reasonText} (
-                  {data.requestedItem.reasonIcd10Code})
+                  <span className="mono">{data.requestedItem.hcpcsCode}</span> &times;{data.requestedItem.quantity} &mdash;{' '}
+                  {data.requestedItem.reasonText} (<span className="mono">{data.requestedItem.reasonIcd10Code}</span>)
                 </td>
               </tr>
             </tbody>
           </table>
 
           {problems.length > 0 && (
-            <div style={{ color: '#b91c1c', marginBottom: 12 }}>
+            <div className="notice notice-danger">
               <strong>Cannot submit:</strong>
               <ul>
                 {problems.map((p) => (
@@ -74,20 +75,18 @@ export function BundleReview({ data, onBack, onSubmit, submitting }: Props) {
             </div>
           )}
 
-          <button onClick={() => setShowRaw((v) => !v)}>{showRaw ? 'Hide' : 'Show'} raw Bundle JSON</button>
-          {showRaw && (
-            <pre style={{ background: '#f1f5f9', padding: 12, borderRadius: 4, overflowX: 'auto', fontSize: 12 }}>
-              {JSON.stringify(bundle, null, 2)}
-            </pre>
-          )}
+          <button className="button-link" onClick={() => setShowRaw((v) => !v)}>
+            {showRaw ? 'Hide' : 'Show'} raw Bundle JSON
+          </button>
+          {showRaw && <pre className="raw-json">{JSON.stringify(bundle, null, 2)}</pre>}
         </>
       )}
 
-      <div style={{ marginTop: 16 }}>
-        <button onClick={onBack} disabled={submitting}>
+      <div className="button-row">
+        <button className="button-secondary" onClick={onBack} disabled={submitting}>
           Back
-        </button>{' '}
-        <button onClick={() => bundle && onSubmit(bundle)} disabled={!canSubmit}>
+        </button>
+        <button className="button-primary" onClick={() => bundle && onSubmit(bundle)} disabled={!canSubmit}>
           {submitting ? 'Submitting...' : 'Submit prior authorization request'}
         </button>
       </div>

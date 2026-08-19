@@ -22,10 +22,16 @@ export class ErrorBoundary extends Component<Props, State> {
   render() {
     if (this.state.error) {
       return (
-        <div style={{ padding: 24 }}>
-          <h2>Something went wrong</h2>
-          <p style={{ color: '#b91c1c' }}>{this.state.error.message}</p>
-          <button onClick={() => this.setState({ error: null })}>Try again</button>
+        <div className="app-shell">
+          <div className="card">
+            <h2>Something went wrong</h2>
+            <div className="notice notice-danger">{this.state.error.message}</div>
+            <div className="button-row">
+              <button className="button-primary" onClick={() => this.setState({ error: null })}>
+                Try again
+              </button>
+            </div>
+          </div>
         </div>
       )
     }
