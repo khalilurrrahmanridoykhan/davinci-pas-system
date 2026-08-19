@@ -1,6 +1,6 @@
 # Da Vinci PAS Prior Authorization System
 
-Live at [pas.krrkhan.com](https://pas.krrkhan.com).
+Live at [pas.krrkhan.com](https://pas.krrkhan.com) &middot; [About page](https://pas.krrkhan.com/about)
 
 ## What this is and isn't
 
@@ -10,17 +10,68 @@ A provider/requester-side client for the [Da Vinci Prior Authorization Support (
 
 Built deliberately outside DHIS2/public-health work to demonstrate FHIR interoperability in a different domain: US payer/provider prior authorization, one of the most in-demand FHIR skill areas in US health IT right now, driven by real CMS interoperability mandates. Scoped to weeks, not months -- a working client against one concrete workflow, not a general-purpose PAS platform.
 
-## The one concrete workflow
+## System architecture
 
-A DME (Durable Medical Equipment) prior-auth request: a knee orthosis (HCPCS `L1833`) via `DeviceRequest`, tied to an ICD-10-coded `Condition`. Chosen because it's a commonly cited real-world PAS example (recurs in HL7 Connectathon test scripts) and keeps the resource graph small enough to reason about end to end.
+Everything runs on one VPS, sharing infrastructure with other apps rather than standing up dedicated infra per project:
 
-## Architecture
+```mermaid
+flowchart LR
+    subgraph browser["Browser"]
+        UI["React wizard<br/>components/ + hooks/"]
+        LIB["src/lib/<br/>buildPasBundle · validatePasBundle<br/>pasClient · parsePasResponse"]
+        UI --> LIB
+    end
 
-FHIR R4, Bundle-based request/response per the PAS IG:
+    subgraph vps["VPS -- 31.97.144.127"]
+        subgraph proxy["Shared Caddy proxy (onehealth-platform-proxy-1)"]
+            R1["pas.krrkhan.com/*<br/>→ static dist/ (docker cp)"]
+            R2["pas.krrkhan.com/fhir/*<br/>→ reverse_proxy"]
+            R3["dhis2.krrkhan.com<br/>→ DHIS2 (unrelated app,<br/>same proxy container)"]
+        end
+        REF["davinci-pas-reference-server<br/>Docker · HL7-DaVinci/prior-auth<br/>BYPASS_AUTH=true"]
+        R2 --> REF
+    end
 
-- `POST {server}/Claim/$submit` with a Bundle containing one `Claim` (patient/coverage/provider/prescription/diagnosis referenced from it) plus `DeviceRequest`, `Patient`, `Practitioner`, `PractitionerRole`, two `Organization`s (payor and requesting provider), `Coverage`, and `Condition`.
-- Response is a Bundle containing a `ClaimResponse`, parsed into `{ outcome, reasonText }`.
-- `src/lib/` holds every pure FHIR-shaping function (`build*.ts`, `validatePasBundle.ts`, `parsePasResponse.ts`), each with a co-located test. `src/hooks/` bridges that into React state. `src/components/` is a five-step wizard (Patient/Coverage -> Provider -> Requested item -> Review -> Result).
+    GH["GitHub repo<br/>davinci-pas-system"]
+    CI["GitHub Actions<br/>.github/workflows/ci.yml"]
+
+    LIB -- "POST /fhir/Claim/$submit" --> R2
+    GH -- "push to main" --> CI
+    CI -- "build → rsync → docker cp" --> R1
+```
+
+- **The client** (this repo) is a static Vite/React build -- no server-side code of its own. All FHIR logic lives in `src/lib/` as pure, unit-tested functions; `src/hooks/` bridges them into React state; `src/components/` is presentation only.
+- **The payer side** is a separate Docker container running the official reference implementation, reachable only inside the VPS's Docker network (never exposed on its own public port) -- Caddy is the only thing that talks to it directly.
+- **`dhis2.krrkhan.com` shares the same Caddy container** as this app (a pre-existing multi-tenant setup, not something built for this project) -- see [Deploying](#deploying-a-real-gotcha-found-by-actually-doing-it) for what that constrains.
+- **CI/CD** is push-to-deploy: every push to `main` on GitHub runs the test suite, then builds and ships straight to production. There's no staging environment.
+
+## Workflow: how a request actually moves through the system
+
+```mermaid
+sequenceDiagram
+    actor U as User
+    participant W as Wizard (5 steps)
+    participant L as src/lib (pure functions)
+    participant S as Reference server<br/>Claim/$submit
+
+    U->>W: Patient & Coverage
+    U->>W: Requesting Provider
+    U->>W: Requested Item (HCPCS + ICD-10)
+    W->>L: buildPasBundle(data)
+    L-->>W: Bundle -- Claim, DeviceRequest,<br/>Patient, Practitioner, Coverage, Condition...
+    W->>L: validatePasBundle(bundle)
+    L-->>W: [] no problems, or a list of blockers
+    U->>W: Submit
+    W->>S: POST /fhir/Claim/$submit
+    S-->>W: Bundle{ ClaimResponse }
+    W->>L: parsePasResponse(response)
+    L-->>W: { outcome, reasonText }
+    W-->>U: Approved / Denied / Pended / Error
+```
+
+The one concrete workflow built end to end: a DME (Durable Medical Equipment) prior-auth request for a knee orthosis (HCPCS `L1833`) via `DeviceRequest`, tied to an ICD-10-coded `Condition`. Chosen because it's a commonly cited real-world PAS example (recurs in HL7 Connectathon test scripts) and keeps the resource graph small enough to reason about end to end.
+
+What the assembled Bundle actually contains: one `Claim` (referencing patient/coverage/provider, plus `prescription`/`diagnosis` pointing at the DeviceRequest and Condition) alongside `DeviceRequest`, `Patient`, `Practitioner`, `PractitionerRole`, two `Organization`s (payor and requesting provider), `Coverage`, and `Condition` -- nine resources, one request.
 
 ## Two real bugs found only by testing against the live reference server
 
